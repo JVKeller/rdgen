@@ -3,6 +3,8 @@ from pathlib import Path
 from django.http import HttpResponse, JsonResponse
 from django.shortcuts import render
 from django.core.files.base import ContentFile
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_http_methods
 import os
 import re
 import requests
@@ -222,18 +224,30 @@ def generator_view(request):
                 'X-GitHub-Api-Version': '2022-11-28'
             }
             create_github_run(myuuid)
-            response = requests.post(url, json=data, headers=headers)
-            print(response)
-            if response.status_code == 204:
-                return render(request, 'waiting.html', {'filename':filename, 'uuid':myuuid, 'status':"Starting generator...please wait", 'platform':platform})
-            else:
-                return JsonResponse({"error": "Something went wrong"})
+            print(f"DEBUG: Making GitHub API request to: {url}")
+            print(f"DEBUG: GitHub user: {_settings.GHUSER}")
+            print(f"DEBUG: GitHub bearer token length: {len(_settings.GHBEARER) if _settings.GHBEARER else 0}")
+            print(f"DEBUG: Request data: {data}")
+
+            try:
+                response = requests.post(url, json=data, headers=headers)
+                print(f"DEBUG: GitHub API response status: {response.status_code}")
+                print(f"DEBUG: GitHub API response text: {response.text}")
+
+                if response.status_code == 204:
+                    return render(request, 'waiting.html', {'filename':filename, 'uuid':myuuid, 'status':"Starting generator...please wait", 'platform':platform})
+                else:
+                    return JsonResponse({"error": f"GitHub API error: {response.status_code} - {response.text}"})
+            except Exception as e:
+                print(f"DEBUG: Exception during GitHub API call: {str(e)}")
+                return JsonResponse({"error": f"Request failed: {str(e)}"})
     else:
         form = GenerateForm()
     #return render(request, 'maintenance.html')
     return render(request, 'generator.html', {'form': form})
 
 
+@csrf_exempt
 def check_for_file(request):
     filename = request.GET['filename']
     uuid = request.GET['uuid']
@@ -280,6 +294,7 @@ def create_github_run(myuuid):
     )
     new_github_run.save()
 
+@csrf_exempt
 def update_github_run(request):
     data = json.loads(request.body)
     myuuid = data.get('uuid')
@@ -327,11 +342,12 @@ def resize_and_encode_icon(imagefile):
     return resized64
  
 #the following is used when accessed from an external source, like the rustdesk api server
+@csrf_exempt
 def startgh(request):
     #print(request)
     data_ = json.loads(request.body)
     ####from here run the github action, we need user, repo, access token.
-    url = 'https://api.github.com/repos/'+_settings.GHUSER+'/'+_settings.REPONAME+'/actions/workflows/generator-'+data_.get('platform')+'.yml/dispatches'  
+    url = 'https://api.github.com/repos/'+_settings.GHUSER+'/'+_settings.REPONAME+'/actions/workflows/generator-'+data_.get('platform')+'.yml/dispatches'
     data = {
         "ref":"master",
         "inputs":{
@@ -346,7 +362,7 @@ def startgh(request):
             "extras":data_.get('extras'),
             "filename":data_.get('filename')
         }
-    } 
+    }
     headers = {
         'Accept':  'application/vnd.github+json',
         'Content-Type': 'application/json',
@@ -383,6 +399,7 @@ def save_png(file, uuid, domain, name):
     #return "%s/%s" % (domain, file_save_path)
     return json.dumps(imageJson)
 
+@csrf_exempt
 def save_custom_client(request):
     file = request.FILES['file']
     myuuid = request.POST.get('uuid')
@@ -393,3 +410,9 @@ def save_custom_client(request):
             f.write(chunk)
 
     return HttpResponse("File saved successfully!")
+
+def favicon_view(request):
+    """Return a simple favicon to prevent 404 errors"""
+    # Return a simple 1x1 transparent PNG
+    favicon_data = b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01\x00\x00\x05\x00\x01\r\n-\xdb\x00\x00\x00\x00IEND\xaeB`\x82'
+    return HttpResponse(favicon_data, content_type='image/png')
