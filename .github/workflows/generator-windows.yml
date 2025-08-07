@@ -376,19 +376,33 @@ jobs:
 
       - name: magick stuff
         if: ${{ inputs.iconlink != 'false' }}
-        continue-on-error: true
+        continue-on-error: false
+        shell: powershell
         run: |
-          Invoke-WebRequest -Uri ${{ fromJson(inputs.iconlink).url }}/get_png?filename=${{ fromJson(inputs.iconlink).file }}"&"uuid=${{ fromJson(inputs.iconlink).uuid }} -OutFile ./res/icon.png 
-          mv ./res/32x32.png ./res/32x32.png.bak
-          mv ./res/64x64.png ./res/64x64.png.bak
-          mv ./res/128x128.png ./res/128x128.png.bak
-          mv ./res/128x128@2x.png ./res/128x128@2x.png.bak
-          magick ./res/icon.png -define icon:auto-resize=256,64,48,32,16 ./res/icon.ico
-          cp ./res/icon.ico ./res/tray-icon.ico
-          magick ./res/icon.png -resize 32x32 ./res/32x32.png
-          magick ./res/icon.png -resize 64x64 ./res/64x64.png
-          magick ./res/icon.png -resize 128x128 ./res/128x128.png
-          magick ./res/128x128.png -resize 200% ./res/128x128@2x.png
+          # Download icon with proper error handling
+          try {
+            Invoke-WebRequest -Uri "${{ fromJson(inputs.iconlink).url }}/get_png?filename=${{ fromJson(inputs.iconlink).file }}&uuid=${{ fromJson(inputs.iconlink).uuid }}" -OutFile ./res/icon.png
+            Write-Host "Icon downloaded successfully"
+          } catch {
+            Write-Error "Failed to download icon: $_"
+            exit 1
+          }
+
+          # Backup existing files if they exist
+          if (Test-Path ./res/32x32.png) { Move-Item ./res/32x32.png ./res/32x32.png.bak }
+          if (Test-Path ./res/64x64.png) { Move-Item ./res/64x64.png ./res/64x64.png.bak }
+          if (Test-Path ./res/128x128.png) { Move-Item ./res/128x128.png ./res/128x128.png.bak }
+          if (Test-Path ./res/128x128@2x.png) { Move-Item ./res/128x128@2x.png ./res/128x128@2x.png.bak }
+
+          # Convert using proper ImageMagick syntax
+          magick convert ./res/icon.png -define icon:auto-resize=256,64,48,32,16 ./res/icon.ico
+          Copy-Item ./res/icon.ico ./res/tray-icon.ico
+          magick convert ./res/icon.png -resize 32x32 ./res/32x32.png
+          magick convert ./res/icon.png -resize 64x64 ./res/64x64.png
+          magick convert ./res/icon.png -resize 128x128 ./res/128x128.png
+          magick convert ./res/128x128.png -resize 200% ./res/128x128@2x.png
+
+          Write-Host "Icon processing completed successfully"
 
 
       - name: ui.rs icon
@@ -526,9 +540,17 @@ jobs:
 
       - name: logo stuff
         if: ${{ inputs.logolink != 'false' }}
-        continue-on-error: true
+        continue-on-error: false
+        shell: powershell
         run: |
-          Invoke-WebRequest -Uri ${{ fromJson(inputs.logolink).url }}/get_png?filename=${{ fromJson(inputs.logolink).file }}"&"uuid=${{ fromJson(inputs.logolink).uuid }} -OutFile ./rustdesk/data/flutter_assets/assets/logo.png
+          # Download logo with proper error handling
+          try {
+            Invoke-WebRequest -Uri "${{ fromJson(inputs.logolink).url }}/get_png?filename=${{ fromJson(inputs.logolink).file }}&uuid=${{ fromJson(inputs.logolink).uuid }}" -OutFile ./rustdesk/data/flutter_assets/assets/logo.png
+            Write-Host "Logo downloaded successfully"
+          } catch {
+            Write-Error "Failed to download logo: $_"
+            exit 1
+          }
 
 
       - name: find Runner.res
